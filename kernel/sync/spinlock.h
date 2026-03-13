@@ -6,13 +6,13 @@
 #ifndef UNTITLED_OS_SPINLOCK_H
 #define UNTITLED_OS_SPINLOCK_H
 
-//#include "../lib/include/stdint.h"
 #include <inttypes.h>
 #include "../sched/proc.h"
 #include "../lib/include/x86_64.h"
 
 struct spinlock {
-    uint8_t is_locked;
+    // Changed to uint32_t to safely match the 'movl' assembly instruction and standard x86 32-bit atomic operations.
+    uint32_t is_locked; 
     char *name;
 };
 

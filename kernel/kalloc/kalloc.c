@@ -1,7 +1,7 @@
 #include "../kalloc/kalloc.h"
 #include "../sync/spinlock.h"
 #include "../memlayout.h"
-//#include "../lib/include/stdint.h"
+#include "../lib/include/memset.h"
 #include <inttypes.h>
 #include <stddef.h>
 #include "../lib/include/logging.h"
@@ -17,16 +17,17 @@ struct {
 
 
 void kinit(uint64_t start, uint64_t stop) {
-    // TODO Race Cond.
-    //  init_spinlock(&kmem.lock, "kmem");
+    // Initialize the lock before any pages are pushed to the stack
+    init_spinlock(&kmem.lock, "kmem");
+    
     char *p;
     p = (char *) PGROUNDUP(start);
-    for (; p + PGSIZE < stop; p += PGSIZE)
+    for (; p + PGSIZE < stop; p += PGSIZE) {
         kfree(p);
+    }
 }
 
 void kfree(void *pa) {
-    // TODO Race Cond.
     struct run *r;
 
     if (((uint64_t) pa % PGSIZE) != 0 || (char *) pa < end || (uint64_t) pa >= PHYSTOP) {
@@ -34,42 +35,50 @@ void kfree(void *pa) {
         panic("kfree");
     }
 
-    // Fill with junk to catch dangling refs.
-    char *testpa = (pa + PGSIZE - 1);
+    // Fill with junk to catch dangling references
     memset(pa, 0, PGSIZE);
 
     r = (struct run *) pa;
 
-//    acquire_spinlock(&kmem.lock);
+    // Push the page onto the LIFO stack securely using a spinlock
+    acquire_spinlock(&kmem.lock);
     r->next = kmem.freelist;
     kmem.freelist = r;
-//    release_spinlock(&kmem.lock);
+    release_spinlock(&kmem.lock);
 }
 
 void *kalloc() {
-    // TODO Race Cond.
     struct run *r;
 
-//    acquire_spinlock(&kmem.lock);
+    // Pop the top page from the LIFO stack securely
+    acquire_spinlock(&kmem.lock);
     r = kmem.freelist;
-    if (r)
+    if (r) {
         kmem.freelist = r->next;
-//    release_spinlock(&kmem.lock);
+    }
+    release_spinlock(&kmem.lock);
 
-    if (r)
-        memset((char *) r, 5, PGSIZE); // fill with junk
+    if (r) {
+        // Fill with junk to ensure the caller doesn't rely on previous content
+        memset((char *) r, 5, PGSIZE); 
+    }
+    
     return (void *) r;
 }
 
 uint64_t count_pages() {
-    struct run *r = kmem.freelist;
+    struct run *r;
     uint64_t res = 0;
 
+    // Traverse the stack safely
+    acquire_spinlock(&kmem.lock);
+    r = kmem.freelist;
     while (r != 0) {
         res++;
         r = r->next;
     }
+    release_spinlock(&kmem.lock);
 
-    LOG("%d pages available in allocator", res);
+    LOG("%d pages available in allocator stack", res);
     return res;
 }

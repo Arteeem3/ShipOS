@@ -11,38 +11,34 @@ void init_spinlock(struct spinlock *lock, char *name) {
     lock->name = name;
 }
 
-//bool function
 void acquire_spinlock(struct spinlock *lk) {
-    pushcli(); // disable interrupts to avoid deadlock.
-//    if (holding_spinlock(lk)) {
-//        popcli();
-//        return 1;
-//    }
+    // Disable interrupts to avoid deadlock
+    pushcli(); 
 
     // The xchg is atomic.
-    while (xchg(&lk->is_locked, 1) != 0);
+    while (xchg(&lk->is_locked, 1) != 0) {
+        // Spin and wait for the lock to be released
+    }
 
     // Tell the C compiler and the processor to not move loads or stores
     // past this point, to ensure that the critical section's memory
     // references happen after the lock is acquire_spinlockd.
     __sync_synchronize();
-    return;
 }
 
 void release_spinlock(struct spinlock *lk) {
-    if (!holding_spinlock(lk))
-        panic("release_spinlock");
+    if (!holding_spinlock(lk)) {
+        panic("release_spinlock: lock is not held");
+    }
 
     // Tell the C compiler and the processor to not move loads or stores
     // past this point, to ensure that all the stores in the critical
     // section are visible to other cores before the lock is release_spinlockd.
-    // Both the C compiler and the hardware may re-order loads and
-    // stores; __sync_synchronize() tells them both not to.
     __sync_synchronize();
 
-    // release_spinlock the lock, equivalent to lk->locked = 0.
-    // This code can't use a C assignment, since it might
-    // not be atomic. A real OS would use C atomics here.
+    // Release the lock, equivalent to lk->is_locked = 0.
+    // We use inline assembly to guarantee that the compiler doesn't 
+    // translate this into multiple non-atomic instructions.
     asm volatile("movl $0, %0" : "+m" (lk->is_locked) : );
 
     popcli();
